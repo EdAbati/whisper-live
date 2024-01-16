@@ -1,8 +1,11 @@
 import abc
+import time
 from typing import Literal
 
 import torch
 from transformers import pipeline
+
+from whisper_live.logging_utils import logger
 
 
 class Model(abc.ABC):
@@ -60,6 +63,7 @@ class HuggingFaceModel(Model):
         return self.pipe.feature_extractor.sampling_rate
 
     def transcribe(self, audio_array):
+        start_time = time.perf_counter()
         outputs = self.pipe(
             audio_array,
             chunk_length_s=self.chunk_length_s,
@@ -67,5 +71,7 @@ class HuggingFaceModel(Model):
             generate_kwargs={"task": self.task, "language": self.language},
             return_timestamps=self.return_timestamps,
         )
+        duration_s = time.perf_counter() - start_time
+        logger.debug(f"Model transcription time: {duration_s:.3f}s")
         text = outputs["text"].strip()
         return text

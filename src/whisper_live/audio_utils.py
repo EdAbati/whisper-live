@@ -1,5 +1,6 @@
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from queue import Queue
 
 import numpy as np
@@ -55,8 +56,8 @@ def get_all_audio_queue(data_queue: Queue) -> bytes:
 
 @dataclass
 class AudioChunk:
-    start_time: float
-    end_time: float | None = None
+    start_time: datetime
+    end_time: datetime | None = None
     audio_array: np.ndarray = field(default_factory=lambda: np.array([]))
 
     @property

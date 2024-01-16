@@ -151,7 +151,7 @@ def main(
     )
 
     # Cue the user that we're ready to go.
-    print("\n🎤 Microphone is now listening...\n")  # noqa: T201)
+    print("\n🎤 Microphone is now listening...\n")  # noqa: T201
 
     current_audio_chunk = audio_utils.AudioChunk(start_time=datetime.now(tz=UTC))
 
@@ -160,15 +160,16 @@ def main(
             now = datetime.now(tz=UTC)
             # Pull raw recorded audio from the queue.
             if not data_queue.empty():
-                # Store end time if we're over the recording time limit.
-                if now - current_audio_chunk.start_time > timedelta(seconds=recording_duration):
-                    current_audio_chunk.end_time = now
-
                 # Get audio data from queue
                 audio_data = audio_utils.get_all_audio_queue(data_queue)
                 audio_np_array = audio_utils.to_audio_array(audio_data)
 
+                # Store end time if we're over the recording time limit.
+                if now - current_audio_chunk.start_time >= timedelta(seconds=recording_duration):
+                    current_audio_chunk.end_time = now
+
                 if current_audio_chunk.is_complete:
+                    logger.debug(f"Transcribing chunk of length {current_audio_chunk.duration}s ...")
                     text = transcribe_model.transcribe(current_audio_chunk.audio_array)
                     sentence = Sentence(
                         start_time=current_audio_chunk.start_time, end_time=current_audio_chunk.end_time, text=text

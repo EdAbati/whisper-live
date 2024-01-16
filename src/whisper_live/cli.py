@@ -141,7 +141,14 @@ def main(
 
     # Create a background thread that will pass us raw audio bytes.
     # We could do this manually but SpeechRecognizer provides a nice helper.
-    speech_recognizer.listen_in_background(source=microphone, callback=record_callback)
+    speech_recognizer.listen_in_background(
+        source=microphone,
+        callback=record_callback,
+        # Maximum number of seconds that this will allow a phrase to continue before stopping and
+        # returning the part of the phrase processed before the time limit was reached.
+        # The resulting audio will be the phrase cut off at the time limit.
+        phrase_time_limit=recording_duration,
+    )
 
     # Cue the user that we're ready to go.
     print("\n🎤 Microphone is now listening...\n")  # noqa: T201)

@@ -1,3 +1,5 @@
+# This implementation was ported from: https://github.com/Uberi/speech_recognition
+
 import pyaudio
 
 

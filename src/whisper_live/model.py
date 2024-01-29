@@ -11,11 +11,9 @@ from whisper_live.logging_utils import logger
 class Model(abc.ABC):
     @property
     @abc.abstractmethod
-    def sampling_rate(self):
-        ...
+    def sampling_rate(self): ...
 
-    def transcribe(self, audio_array):
-        ...
+    def transcribe(self, audio_array): ...
 
 
 class MockModel(Model):
@@ -46,9 +44,11 @@ class HuggingFaceModel(Model):
             model=model_name,
             torch_dtype=torch_dtype,
             device="mps" if device_id == "mps" else f"cuda:{device_id}",
-            model_kwargs={"attn_implementation": "flash_attention_2"}
-            if use_flash_attention_2
-            else {"attn_implementation": "sdpa"},
+            model_kwargs=(
+                {"attn_implementation": "flash_attention_2"}
+                if use_flash_attention_2
+                else {"attn_implementation": "sdpa"}
+            ),
         )
         self.chunk_length_s = chunk_length_s
         self.batch_size = batch_size

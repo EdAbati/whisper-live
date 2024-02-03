@@ -3,19 +3,6 @@ from datetime import datetime
 from queue import Queue
 
 import numpy as np
-import speech_recognition as sr
-
-
-def get_speech_recognizer(energy_threshold: int = 300) -> sr.Recognizer:
-    """Set up a speech recognizer with a custom energy threshold."""
-    # We use SpeechRecognizer to record our audio because it has a nice feature where
-    # it can detect when speech ends.
-    speech_recognizer = sr.Recognizer()
-    speech_recognizer.energy_threshold = energy_threshold
-    # Definitely do this, dynamic energy compensation lowers the energy threshold dramatically
-    # to a point where the SpeechRecognizer never stops recording.
-    speech_recognizer.dynamic_energy_threshold = False
-    return speech_recognizer
 
 
 def to_audio_array(audio_data: bytes) -> np.ndarray:

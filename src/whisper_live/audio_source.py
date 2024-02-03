@@ -260,3 +260,22 @@ class _MicrophoneStream(_AudioSourceStream):
                 self.pyaudio_stream.stop_stream()
         finally:
             self.pyaudio_stream.close()
+
+
+def get_system_microphone(default_microphone: str | None = "pulse", sample_rate: int = 16000) -> Microphone:
+    """Get the specified system microphone if available."""
+    import sys
+
+    # Important for linux users.
+    # Prevents permanent application hang and crash by using the wrong Microphone
+    if "linux" in sys.platform:
+        mic_name = default_microphone
+        if not mic_name or mic_name == "list":
+            mic_names = "\n".join(f"- {n}" for n in list_microphone_names())
+            err_msg = f"No microphone selected. Available microphone devices are:\n{mic_names}"
+            raise ValueError(err_msg)
+        else:
+            for index, name in list_microphone_names():
+                if mic_name in name:
+                    return Microphone(sample_rate=sample_rate, device_index=index)
+    return Microphone(sample_rate=sample_rate)

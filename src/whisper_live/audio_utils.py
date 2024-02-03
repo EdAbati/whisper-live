@@ -1,29 +1,9 @@
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from queue import Queue
 
 import numpy as np
 import speech_recognition as sr
-
-from whisper_live.audio_source import Microphone, list_microphone_names
-
-
-def get_microphone(default_microphone: str | None = "pulse", sample_rate: int = 16000) -> Microphone:
-    """Get the specified system microphone if available."""
-    # Important for linux users.
-    # Prevents permanent application hang and crash by using the wrong Microphone
-    if "linux" in sys.platform:
-        mic_name = default_microphone
-        if not mic_name or mic_name == "list":
-            mic_names = "\n".join(f"- {n}" for n in list_microphone_names())
-            err_msg = f"No microphone selected. Available microphone devices are:\n{mic_names}"
-            raise ValueError(err_msg)
-        else:
-            for index, name in list_microphone_names():
-                if mic_name in name:
-                    return Microphone(sample_rate=sample_rate, device_index=index)
-    return Microphone(sample_rate=sample_rate)
 
 
 def get_speech_recognizer(energy_threshold: int = 300) -> sr.Recognizer:

@@ -12,8 +12,7 @@ STEREO_CHANNELS = 2
 
 class _AudioSourceStream(abc.ABC):
     @abc.abstractmethod
-    def read(self, num_frames: int) -> bytes:
-        ...
+    def read(self, num_frames: int) -> bytes: ...
 
 
 class AudioSource(abc.ABC):
@@ -37,12 +36,10 @@ class AudioSource(abc.ABC):
         return float(self.frames_per_buffer) / self.sample_rate
 
     @abc.abstractmethod
-    def __enter__(self):
-        ...
+    def __enter__(self): ...
 
     @abc.abstractmethod
-    def __exit__(self, exc_type, exc_value, traceback):
-        ...
+    def __exit__(self, exc_type, exc_value, traceback): ...
 
 
 class AudioFile(AudioSource):

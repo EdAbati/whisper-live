@@ -1,4 +1,4 @@
-# This implementation was ported from: https://github.com/Uberi/speech_recognition
+# This implementation was mostly ported from: https://github.com/Uberi/speech_recognition
 
 import abc
 import audioop

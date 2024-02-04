@@ -23,7 +23,6 @@ classifiers = [
 dependencies = [
   "numpy~=1.26.3",
   "PyAudio~=0.2.14",
-  "SpeechRecognition~=3.10.0",
   "transformers[torch]~=4.37.2",
 ]
 

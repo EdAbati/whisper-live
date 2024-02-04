@@ -1,10 +1,9 @@
-import argparse
 from datetime import UTC, datetime, timedelta
 from queue import Queue
-from sys import platform
 from time import sleep
 from typing import Literal
 
+import click
 import torch
 
 from whisper_live import audio_source, audio_utils, model
@@ -13,85 +12,90 @@ from whisper_live.recorder import AudioRecorder, MonoAudioData
 from whisper_live.transcribe_utils import Sentence
 
 
-def _parse_cli_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--model-name",
-        required=False,
-        default="openai/whisper-large-v3",
-        type=str,
-        help="Name of the pretrained model/ checkpoint to perform ASR. (default: openai/whisper-large-v3)",
-    )
-    parser.add_argument(
-        "--energy-threshold",
-        default=300,
-        help="Energy level for mic to detect. (default: 300)",
-        type=int,
-    )
-    parser.add_argument(
-        "--recording-duration",
-        default=2,
-        help=(
-            "How many seconds each recording chunk should be before being sent to the model. "
-            "Longer recordings maybe be more accurate, but the transcription will be shown with a longer delay. "
-            "(default: 2)"
-        ),
-        type=float,
-    )
-    parser.add_argument(
-        "--language",
-        required=False,
-        type=str,
-        # TODO: change to "english" maybe? This field should also be validated against possible values.
-        default="italian",
-        help='Language of the input audio. (default: "italian")',
-    )
-    parser.add_argument(
-        "--batch-size",
-        required=False,
-        type=int,
-        default=24,
-        help="Number of parallel batches you want to compute. Reduce if you face OOMs. (default: 24)",
-    )
-    parser.add_argument(
-        "--timestamp",
-        required=False,
-        type=str,
-        default="chunk",
-        choices=["chunk", "word"],
-        help="Whisper supports both chunked as well as word level timestamps. (default: chunk)",
-    )
-    parser.add_argument(
-        "--device-id",
-        required=False,
-        default="mps",
-        type=str,
-        help=(
-            "Device ID for your GPU. Just pass the device number when using CUDA, "
-            'or "mps" for Macs with Apple Silicon. (default: "mps")'
-        ),
-    )
-    if "linux" in platform:
-        parser.add_argument(
-            "--default-microphone",
-            default="pulse",
-            help="Default microphone name for SpeechRecognition. "
-            "Run this with 'list' to view available Microphones. (default: pulse)",
-            type=str,
+@click.group()
+def main_cli():
+    """Transcribe live audio from your microphone using Whisper."""
+    pass
+
+
+@main_cli.command()
+@click.option(
+    "--kind",
+    default="all",
+    show_default=True,
+    help="Kind of audio devices to list.",
+    type=click.Choice(["input", "output", "all"]),
+)
+def list_devices(kind: Literal["input", "output", "all"]):
+    """List all available audio devices."""
+    from sounddevice import query_devices
+
+    if kind == "all":
+        click.echo(query_devices())
+    else:
+        device = query_devices(kind=kind)
+        click.echo(
+            f"The active {kind.capitalize()} device is:\n"
+            f"  {device['index']} {device['name']} "
+            f"({device['max_input_channels']} in, {device['max_output_channels']} out)"
         )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        help="Increases verbosity of logging. Can be used multiple times to increase verbosity further.",
-        action="count",
-        dest="loglevel",
-        default=0,
-    )
-    args = parser.parse_args()
-    return args
 
 
-def main(
+@main_cli.command()
+@click.option(
+    "--model-name",
+    default="openai/whisper-large-v3",
+    show_default=True,
+    type=str,
+    help="Name of the HuggingFace pretrained model/checkpoint to use to transcribe.",
+)
+@click.option("--energy-threshold", default=300, show_default=True, help="Energy level for mic to detect.", type=int)
+@click.option(
+    "--recording-duration",
+    default=2,
+    show_default=True,
+    help=(
+        "How many seconds each recording chunk should be before being sent to the model. "
+        "Longer recordings maybe be more accurate, but the transcription will be shown with a longer delay."
+    ),
+    type=float,
+)
+@click.option("--language", default="italian", show_default=True, help="Language of the input audio.", type=str)
+@click.option(
+    "--batch-size",
+    default=24,
+    show_default=True,
+    help="Number of parallel batches you want to compute. Reduce if you face OOMs.",
+    type=int,
+)
+@click.option(
+    "--timestamp",
+    default="chunk",
+    show_default=True,
+    help="Whisper supports both chunked and word level timestamps.",
+    type=str,
+)
+@click.option(
+    "--device-id",
+    default="mps",
+    show_default=True,
+    help='Device ID for your GPU. Just pass the device number when using CUDA, or "mps" for Macs with Apple Silicon.',
+    type=str,
+)
+@click.option(
+    "--microphone_id",
+    default=None,
+    help="Default microphone name for SpeechRecognition. Run this with 'list' to view available Microphones.",
+    type=int,
+)
+@click.option(
+    "-v",
+    "--verbose",
+    help="Increases verbosity of logging. Can be used multiple times to increase verbosity further.",
+    count=True,
+    default=0,
+)
+def transcribe(
     model_name: str,
     language: str,
     energy_threshold: int,
@@ -99,8 +103,11 @@ def main(
     batch_size: int,
     timestamp: Literal["chunk", "word"],
     device_id: str,
-    default_microphone: str | None,
+    microphone_id: str | None,
+    verbose: int,
 ) -> None:
+    """Transcribe live audio recorded from the system microphone."""
+    logger.setLevel(level=get_log_level(verbose))
     # Thread safe Queue for passing data from the threaded recording callback.
     data_queue = Queue()
 
@@ -120,7 +127,7 @@ def main(
     logger.info("🛑 Press Ctrl+C to stop recording!")
 
     microphone = audio_source.get_system_microphone(
-        default_microphone=default_microphone, sample_rate=transcribe_model.sampling_rate
+        microphone_index=microphone_id, sample_rate=transcribe_model.sampling_rate
     )
     audio_recorder = AudioRecorder(energy_threshold=energy_threshold)
 
@@ -197,18 +204,3 @@ def main(
                 )
                 print(sentence.text)  # noqa: T201
             break
-
-
-def main_cli() -> None:
-    args = _parse_cli_args()
-    logger.setLevel(level=get_log_level(args.loglevel))
-    main(
-        model_name=args.model_name,
-        language=args.language,
-        energy_threshold=args.energy_threshold,
-        recording_duration=args.recording_duration,
-        batch_size=args.batch_size,
-        timestamp=args.timestamp,
-        device_id=args.device_id,
-        default_microphone=args.default_microphone if "linux" in platform else None,
-    )

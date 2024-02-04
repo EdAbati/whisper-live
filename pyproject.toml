@@ -21,6 +21,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
+  "click~=8.1.7",
   "numpy~=1.26.3",
   "PyAudio~=0.2.14",
   "sounddevice~=0.4.6",
@@ -40,6 +41,7 @@ Source = "https://github.com/EdAbati/whisper-live"
 path = "src/whisper_live/__about__.py"
 
 [tool.hatch.envs.default]
+python = "3.11"
 dependencies = ["coverage[toml]>=6.5", "pytest"]
 [tool.hatch.envs.default.scripts]
 test = "pytest {args:tests}"

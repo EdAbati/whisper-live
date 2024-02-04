@@ -5,6 +5,9 @@ import audioop
 import wave
 
 import pyaudio
+from sounddevice import query_devices
+
+from whisper_live.logging_utils import logger
 
 MONO_CHANNELS = 1
 STEREO_CHANNELS = 2
@@ -112,20 +115,6 @@ class _AudioFileStream(_AudioSourceStream):
         if self.audio_reader.getnchannels() == STEREO_CHANNELS:
             buffer = audioop.tomono(buffer, sample_width, 1, 1)
         return buffer
-
-
-def list_microphone_names() -> list[str]:
-    """
-    Returns the names of all available microphones.
-
-    For microphones where the name can't be retrieved, the list entry contains `None` instead.
-    """
-    audio = pyaudio.PyAudio()
-    try:
-        microphone_names = [audio.get_device_info_by_index(i).get("name") for i in range(audio.get_device_count())]
-    finally:
-        audio.terminate()
-    return microphone_names
 
 
 def _raise_if_audio_device_invalid(audio: pyaudio.PyAudio, device_id: int) -> None:
@@ -262,20 +251,32 @@ class _MicrophoneStream(_AudioSourceStream):
             self.pyaudio_stream.close()
 
 
-def get_system_microphone(default_microphone: str | None = "pulse", sample_rate: int = 16000) -> Microphone:
-    """Get the specified system microphone if available."""
-    import sys
+def get_system_microphone(microphone_index: int | None = None, sample_rate: int = 16000) -> Microphone:
+    """Get the specified system microphone if available.
 
-    # Important for linux users.
-    # Prevents permanent application hang and crash by using the wrong Microphone
-    if "linux" in sys.platform:
-        mic_name = default_microphone
-        if not mic_name or mic_name == "list":
-            mic_names = "\n".join(f"- {n}" for n in list_microphone_names())
-            err_msg = f"No microphone selected. Available microphone devices are:\n{mic_names}"
-            raise ValueError(err_msg)
-        else:
-            for index, name in list_microphone_names():
-                if mic_name in name:
-                    return Microphone(sample_rate=sample_rate, device_index=index)
-    return Microphone(sample_rate=sample_rate)
+    Args:
+        microphone_index: Index of the microphone device to use. If None, the default system microphone is used.
+        sample_rate: Sampling rate to use. The default is 16000 Hz.
+
+    Returns:
+        A `Microphone` instance.
+    """
+    if not microphone_index:
+        input_device = query_devices(kind="input")
+        default_microphone_str = f"'{input_device['name']}' with index {input_device['index']}"
+        logger.warning(f"No microphone specified. Using default system microphone: {default_microphone_str}")
+        microphone_index = int(input_device["index"])
+    else:
+        available_devices = {
+            int(device["index"]): device["name"] for device in query_devices() if int(device["max_input_channels"]) > 0
+        }
+        if microphone_index not in available_devices.keys():
+            available_devices_str = "\n".join(f"  - {index}: {name}" for index, name in available_devices.items())
+            msg = (
+                f"Microphone index {microphone_index} not found in available devices."
+                f"\nAvailable devices:\n{available_devices_str}"
+            )
+            raise ValueError(msg)
+    microphone_name = query_devices(device=microphone_index)["name"]
+    logger.debug(f"Using {microphone_name} microphone with index {microphone_index}")
+    return Microphone(sample_rate=sample_rate, device_index=microphone_index)

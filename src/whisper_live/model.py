@@ -3,7 +3,6 @@ import time
 from typing import Literal
 
 import torch
-from transformers import pipeline
 
 from whisper_live.logging_utils import logger
 
@@ -39,6 +38,8 @@ class HuggingFaceModel(Model):
         language: str | None = None,
         timestamp: Literal["chunk", "word"] = "word",
     ) -> None:
+        from transformers import pipeline
+
         self.pipe = pipeline(
             "automatic-speech-recognition",
             model=model_name,

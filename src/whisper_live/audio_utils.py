@@ -3,7 +3,7 @@ from datetime import datetime
 from queue import Queue
 
 import numpy as np
-from scipy.io.wavfile import write
+import wavio
 
 
 def to_audio_array(audio_data: bytes) -> np.ndarray:
@@ -17,11 +17,11 @@ def to_audio_array(audio_data: bytes) -> np.ndarray:
     return audio_np
 
 
-def get_all_audio_queue(data_queue: Queue) -> bytes:
-    """Returns all audio in the queue."""
-    audio_data = b"".join(data_queue.queue)
+def get_all_audio_queue(data_queue: Queue) -> np.ndarray:
+    """Returns all audio in the queue as a numpy array."""
+    audio_array = np.concatenate(data_queue.queue)
     data_queue.queue.clear()
-    return audio_data
+    return audio_array
 
 
 @dataclass
@@ -39,10 +39,15 @@ class AudioChunk:
         return (self.end_time is not None) and (self.audio_array.size > 0)
 
     def update_array(self, new_audio: np.ndarray) -> None:
-        self.audio_array = np.concatenate((self.audio_array, new_audio))
+        if self.audio_array.size == 0:
+            self.audio_array = new_audio
+        else:
+            # print(new_audio.shape)
+            # print(self.audio_array.shape)
+            self.audio_array = np.concatenate((self.audio_array, new_audio))
 
     def save(self, file_name: str | None = None) -> None:
         """Save the audio array to a file."""
         if file_name is None:
             file_name = f"data/audio_{self.start_time.strftime('%Y-%m-%d_%H-%M-%S')}.wav"
-        write(file_name, 16000, self.audio_array)
+        wavio.write(file_name, self.audio_array, 16000, sampwidth=4)

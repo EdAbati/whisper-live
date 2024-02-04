@@ -4,11 +4,11 @@ from time import sleep
 from typing import Literal
 
 import click
+import numpy as np
 import torch
 
 from whisper_live import audio_source, audio_utils, model
 from whisper_live.logging_utils import get_log_level, logger
-from whisper_live.recorder import AudioRecorder, MonoAudioData
 from whisper_live.transcribe_utils import Sentence
 
 
@@ -126,81 +126,82 @@ def transcribe(
     logger.info(f"🔈 Audio chunks of minimum {recording_duration}s will be sent to the model.")
     logger.info("🛑 Press Ctrl+C to stop recording!")
 
-    microphone = audio_source.get_system_microphone(
-        microphone_index=microphone_id, sample_rate=transcribe_model.sampling_rate
-    )
-    audio_recorder = AudioRecorder(energy_threshold=energy_threshold)
+    # audio_recorder = AudioRecorder(energy_threshold=energy_threshold)
 
-    with microphone:
-        audio_recorder.adjust_for_ambient_noise(source=microphone)
+    # with microphone:
+    #     audio_recorder.adjust_for_ambient_noise(source=microphone)
 
-    def record_callback(audio: MonoAudioData) -> None:
+    def record_callback(indata: np.array, *args) -> None:
         """
-        Threaded callback function to receive audio data when recordings finish.
-
-        It gets the raw bytes from the audio and pushes it into the thread safe queue.
+        Threaded callback function to receive audio data (as numpy array) when the recordings finish.
 
         Args:
-            audio: An AudioData containing the recorded bytes.
+            indata: An numpy array containing the recorded audio.
         """
-        data = audio.get_raw_data()
-        data_queue.put(data)
+        _ = args
+        data_queue.put(indata.copy())
 
-    # Create a background thread that will pass us raw audio bytes.
-    # We could do this manually but SpeechRecognizer provides a nice helper.
-    audio_recorder.listen_in_background(
-        source=microphone,
-        callback=record_callback,
-        # Maximum number of seconds that this will allow a phrase to continue before stopping and
-        # returning the part of the phrase processed before the time limit was reached.
-        # The resulting audio will be the phrase cut off at the time limit.
-        phrase_time_limit=recording_duration,
+    _ = energy_threshold
+
+    microphone = audio_source.get_system_microphone(
+        microphone_index=microphone_id, sample_rate=transcribe_model.sampling_rate, microphone_callback=record_callback
     )
+
+    # # Create a background thread that will pass us raw audio bytes.
+    # # We could do this manually but SpeechRecognizer provides a nice helper.
+    # audio_recorder.listen_in_background(
+    #     source=microphone,
+    #     callback=record_callback,
+    #     # Maximum number of seconds that this will allow a phrase to continue before stopping and
+    #     # returning the part of the phrase processed before the time limit was reached.
+    #     # The resulting audio will be the phrase cut off at the time limit.
+    #     phrase_time_limit=recording_duration,
+    # )
 
     # Cue the user that we're ready to go.
     print("\n🎤 Microphone is now listening...\n")  # noqa: T201
 
     current_audio_chunk = audio_utils.AudioChunk(start_time=datetime.now(tz=UTC))
 
-    while True:
-        try:
-            now = datetime.now(tz=UTC)
-            # Pull raw recorded audio from the queue.
-            if not data_queue.empty():
-                # Get audio data from queue
-                audio_data = audio_utils.get_all_audio_queue(data_queue)
-                audio_np_array = audio_utils.to_audio_array(audio_data)
+    with microphone:
+        while True:
+            try:
+                now = datetime.now(tz=UTC)
+                # Pull raw recorded audio from the queue.
+                if not data_queue.empty():
+                    # Get audio data from queue
+                    audio_np_array = audio_utils.get_all_audio_queue(data_queue)
 
-                # Store end time if we're over the recording time limit.
-                if now - current_audio_chunk.start_time >= timedelta(seconds=recording_duration):
-                    current_audio_chunk.end_time = now
+                    # Store end time if we're over the recording time limit.
+                    if now - current_audio_chunk.start_time >= timedelta(seconds=recording_duration):
+                        current_audio_chunk.end_time = now
 
+                    if current_audio_chunk.is_complete:
+                        logger.debug(f"Transcribing chunk of length {current_audio_chunk.duration}s ...")
+                        text = transcribe_model.transcribe(current_audio_chunk.audio_array)
+                        sentence = Sentence(
+                            start_time=current_audio_chunk.start_time, end_time=current_audio_chunk.end_time, text=text
+                        )
+                        # current_audio_chunk.save()
+                        current_audio_chunk = audio_utils.AudioChunk(
+                            audio_array=audio_np_array, start_time=datetime.now(tz=UTC)
+                        )
+                        print(sentence.text)  # noqa: T201
+                    else:
+                        current_audio_chunk.update_array(audio_np_array)
+
+                    # Flush stdout
+                    print("", end="", flush=True)  # noqa: T201
+
+                    # Infinite loops are bad for processors, must sleep.
+                    sleep(0.25)
+            except KeyboardInterrupt:
+                current_audio_chunk.end_time = datetime.now(tz=UTC)
                 if current_audio_chunk.is_complete:
-                    logger.debug(f"Transcribing chunk of length {current_audio_chunk.duration}s ...")
+                    logger.warning("⚠️ Transcribing last chunk...")
                     text = transcribe_model.transcribe(current_audio_chunk.audio_array)
                     sentence = Sentence(
                         start_time=current_audio_chunk.start_time, end_time=current_audio_chunk.end_time, text=text
                     )
-                    # current_audio_chunk.save()
-                    current_audio_chunk = audio_utils.AudioChunk(
-                        audio_array=audio_np_array, start_time=datetime.now(tz=UTC)
-                    )
                     print(sentence.text)  # noqa: T201
-                else:
-                    current_audio_chunk.update_array(audio_np_array)
-
-                # Flush stdout
-                print("", end="", flush=True)  # noqa: T201
-
-                # Infinite loops are bad for processors, must sleep.
-                sleep(0.25)
-        except KeyboardInterrupt:
-            current_audio_chunk.end_time = datetime.now(tz=UTC)
-            if current_audio_chunk.is_complete:
-                logger.warning("⚠️ Transcribing last chunk...")
-                text = transcribe_model.transcribe(current_audio_chunk.audio_array)
-                sentence = Sentence(
-                    start_time=current_audio_chunk.start_time, end_time=current_audio_chunk.end_time, text=text
-                )
-                print(sentence.text)  # noqa: T201
-            break
+                break

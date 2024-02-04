@@ -3,9 +3,11 @@
 import abc
 import audioop
 import wave
+from collections.abc import Callable
 
+import numpy as np
 import pyaudio
-from sounddevice import query_devices
+from sounddevice import CallbackFlags, InputStream, _ffi, query_devices
 
 from whisper_live.logging_utils import logger
 
@@ -140,121 +142,142 @@ def _default_sample_rate_device(audio: pyaudio.PyAudio, device_id: int) -> int:
     return int(default_sample_rate)
 
 
-class Microphone(AudioSource):
-    """
-    Represents a physical microphone on the computer.
+# class Microphone(AudioSource):
+#     """
+#     Represents a physical microphone on the computer.
 
-    Args:
-        device_index : Index of the microphone device to use. The default is to use the default microphone.
-            A device index is an integer between 0 and `pyaudio.get_device_count() - 1`.
-            See the [PyAudio documentation](https://people.csail.mit.edu/hubert/pyaudio/docs/) for more details.
-        sample_rate : Sampling rate to use. The default is to use the device's default sampling rate
-            (typically 16000 Hz).
-            Higher `sample_rate` values result in better audio quality, but also more bandwidth
-            (and therefore, slower processing). Additionally, some CPUs can't keep up if this value is too high.
-        frames_per_buffer : Number of samples to read at a time from the microphone. The default is 1024.
-            Higher `frames_per_buffer` values help avoid triggering on rapidly changing ambient noise, but also
-            makes detection less sensitive. This value, generally, should be left at its default.
+#     Args:
+#         device_index : Index of the microphone device to use. The default is to use the default microphone.
+#             A device index is an integer between 0 and `pyaudio.get_device_count() - 1`.
+#             See the [PyAudio documentation](https://people.csail.mit.edu/hubert/pyaudio/docs/) for more details.
+#         sample_rate : Sampling rate to use. The default is to use the device's default sampling rate
+#             (typically 16000 Hz).
+#             Higher `sample_rate` values result in better audio quality, but also more bandwidth
+#             (and therefore, slower processing). Additionally, some CPUs can't keep up if this value is too high.
+#         frames_per_buffer : Number of samples to read at a time from the microphone. The default is 1024.
+#             Higher `frames_per_buffer` values help avoid triggering on rapidly changing ambient noise, but also
+#             makes detection less sensitive. This value, generally, should be left at its default.
 
-    The microphone audio is recorded in chunks of `frames_per_buffer` samples, at a rate of `sample_rate` samples per
-    second (Hertz).
-    """
+#     The microphone audio is recorded in chunks of `frames_per_buffer` samples, at a rate of `sample_rate` samples per
+#     second (Hertz).
+#     """
 
-    def __init__(self, device_index: int | None = None, sample_rate: int | None = None, frames_per_buffer: int = 1024):
-        if device_index is not None and not isinstance(device_index, int):
-            msg = "Device index must be None or an integer"
-            raise ValueError(msg)
+#     def __init__(self, device_index: int | None = None, sample_rate: int | None = None, frames_per_buffer: int = 1024): # noqa: E501
+#         if device_index is not None and not isinstance(device_index, int):
+#             msg = "Device index must be None or an integer"
+#             raise ValueError(msg)
 
-        if sample_rate is not None and (not isinstance(sample_rate, int) or sample_rate <= 0):
-            msg = "Sample rate must be None or a positive integer"
-            raise ValueError(msg)
+#         if sample_rate is not None and (not isinstance(sample_rate, int) or sample_rate <= 0):
+#             msg = "Sample rate must be None or a positive integer"
+#             raise ValueError(msg)
 
-        if not isinstance(frames_per_buffer, int) or frames_per_buffer <= 0:
-            msg = "Chunk size must be a positive integer"
-            raise ValueError(msg)
+#         if not isinstance(frames_per_buffer, int) or frames_per_buffer <= 0:
+#             msg = "Chunk size must be a positive integer"
+#             raise ValueError(msg)
 
-        audio = pyaudio.PyAudio()
-        try:
-            _raise_if_audio_device_invalid(audio, device_index)
-            self.sample_rate = sample_rate or _default_sample_rate_device(audio, device_index)
-        # TODO: check for exceptions?
-        finally:
-            audio.terminate()
+#         audio = pyaudio.PyAudio()
+#         try:
+#             _raise_if_audio_device_invalid(audio, device_index)
+#             self.sample_rate = sample_rate or _default_sample_rate_device(audio, device_index)
+#         # TODO: check for exceptions?
+#         finally:
+#             audio.terminate()
 
-        self.device_index = device_index
-        # 16-bit int sampling
-        self.format = pyaudio.paInt16
+#         self.device_index = device_index
+#         # 16-bit int sampling
+#         self.format = pyaudio.paInt16
 
+#         super().__init__(
+#             sample_rate=sample_rate,
+#             sample_width=pyaudio.get_sample_size(self.format),
+#             frames_per_buffer=frames_per_buffer,
+#         )
+
+#     def __enter__(self):
+#         if self.stream is not None:
+#             msg = "This audio source is already inside a context manager"
+#             raise RuntimeError(msg)
+#         self.audio = pyaudio.PyAudio()
+#         try:
+#             pyaudio_stream = self.audio.open(
+#                 input_device_index=self.device_index,
+#                 channels=1,
+#                 format=self.format,
+#                 rate=self.sample_rate,
+#                 frames_per_buffer=self.frames_per_buffer,
+#                 input=True,
+#             )
+#             self.stream = _MicrophoneStream(pyaudio_stream)
+#         # TODO: check for specific exceptions?
+#         except Exception:
+#             self.audio.terminate()
+#         return self
+
+#     def __exit__(self, exc_type, exc_value, traceback):
+#         try:
+#             self.stream.close()
+#         finally:
+#             self.stream = None
+#             self.audio.terminate()
+
+
+# class _MicrophoneStream(_AudioSourceStream):
+#     def __init__(self, pyaudio_stream: pyaudio.Stream):
+#         """
+#         Initializes an object that reads audio data from a microphone stream.
+
+#         Args:
+#             pyaudio_stream: The PyAudio stream object.
+#         """
+#         self.pyaudio_stream = pyaudio_stream
+
+#     def read(self, num_frames: int) -> bytes:
+#         """
+#         Reads audio data from the microphone stream.
+
+#         Args:
+#             num_frames: The number of frames to read.
+
+#         Returns:
+#             The audio data read as bytes.
+#         """
+#         return self.pyaudio_stream.read(num_frames=num_frames, exception_on_overflow=False)
+
+#     def close(self):
+#         """Closes the microphone stream."""
+#         try:
+#             # sometimes, if the stream isn't stopped, closing the stream throws an exception
+#             if not self.pyaudio_stream.is_stopped():
+#                 self.pyaudio_stream.stop_stream()
+#         finally:
+#             self.pyaudio_stream.close()
+
+CallbackFunc = Callable[[np.ndarray, int, _ffi.CData, CallbackFlags], None]
+
+
+class Microphone(InputStream):
+    def __init__(
+        self, device_index: int, sample_rate: int, callback: CallbackFunc, frames_per_buffer: int | None = 1024
+    ):
         super().__init__(
-            sample_rate=sample_rate,
-            sample_width=pyaudio.get_sample_size(self.format),
-            frames_per_buffer=frames_per_buffer,
+            samplerate=sample_rate,
+            blocksize=frames_per_buffer,
+            device=device_index,
+            callback=callback,
+            channels=1,
+            # dtype="int16",
         )
 
-    def __enter__(self):
-        if self.stream is not None:
-            msg = "This audio source is already inside a context manager"
-            raise RuntimeError(msg)
-        self.audio = pyaudio.PyAudio()
-        try:
-            pyaudio_stream = self.audio.open(
-                input_device_index=self.device_index,
-                channels=1,
-                format=self.format,
-                rate=self.sample_rate,
-                frames_per_buffer=self.frames_per_buffer,
-                input=True,
-            )
-            self.stream = _MicrophoneStream(pyaudio_stream)
-        # TODO: check for specific exceptions?
-        except Exception:
-            self.audio.terminate()
-        return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        try:
-            self.stream.close()
-        finally:
-            self.stream = None
-            self.audio.terminate()
-
-
-class _MicrophoneStream(_AudioSourceStream):
-    def __init__(self, pyaudio_stream: pyaudio.Stream):
-        """
-        Initializes an object that reads audio data from a microphone stream.
-
-        Args:
-            pyaudio_stream: The PyAudio stream object.
-        """
-        self.pyaudio_stream = pyaudio_stream
-
-    def read(self, num_frames: int) -> bytes:
-        """
-        Reads audio data from the microphone stream.
-
-        Args:
-            num_frames: The number of frames to read.
-
-        Returns:
-            The audio data read as bytes.
-        """
-        return self.pyaudio_stream.read(num_frames=num_frames, exception_on_overflow=False)
-
-    def close(self):
-        """Closes the microphone stream."""
-        try:
-            # sometimes, if the stream isn't stopped, closing the stream throws an exception
-            if not self.pyaudio_stream.is_stopped():
-                self.pyaudio_stream.stop_stream()
-        finally:
-            self.pyaudio_stream.close()
-
-
-def get_system_microphone(microphone_index: int | None = None, sample_rate: int = 16000) -> Microphone:
+def get_system_microphone(
+    microphone_callback: CallbackFunc,
+    microphone_index: int | None = None,
+    sample_rate: int = 16000,
+) -> Microphone:
     """Get the specified system microphone if available.
 
     Args:
+        microphone_callback: The callback function to be called when recording audio data.
         microphone_index: Index of the microphone device to use. If None, the default system microphone is used.
         sample_rate: Sampling rate to use. The default is 16000 Hz.
 
@@ -279,4 +302,4 @@ def get_system_microphone(microphone_index: int | None = None, sample_rate: int 
             raise ValueError(msg)
     microphone_name = query_devices(device=microphone_index)["name"]
     logger.debug(f"Using {microphone_name} microphone with index {microphone_index}")
-    return Microphone(sample_rate=sample_rate, device_index=microphone_index)
+    return Microphone(sample_rate=sample_rate, device_index=microphone_index, callback=microphone_callback)

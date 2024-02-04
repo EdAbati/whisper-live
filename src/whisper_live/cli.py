@@ -178,6 +178,8 @@ def transcribe(
 
                     if current_audio_chunk.is_complete:
                         logger.debug(f"Transcribing chunk of length {current_audio_chunk.duration}s ...")
+                        print(current_audio_chunk.audio_array.shape)  # noqa: T201
+                        print(current_audio_chunk.audio_array.dtype)  # noqa: T201
                         text = transcribe_model.transcribe(current_audio_chunk.audio_array)
                         sentence = Sentence(
                             start_time=current_audio_chunk.start_time, end_time=current_audio_chunk.end_time, text=text

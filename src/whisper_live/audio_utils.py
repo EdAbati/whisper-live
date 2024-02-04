@@ -3,6 +3,7 @@ from datetime import datetime
 from queue import Queue
 
 import numpy as np
+from scipy.io.wavfile import write
 
 
 def to_audio_array(audio_data: bytes) -> np.ndarray:
@@ -39,3 +40,9 @@ class AudioChunk:
 
     def update_array(self, new_audio: np.ndarray) -> None:
         self.audio_array = np.concatenate((self.audio_array, new_audio))
+
+    def save(self, file_name: str | None = None) -> None:
+        """Save the audio array to a file."""
+        if file_name is None:
+            file_name = f"data/audio_{self.start_time.strftime('%Y-%m-%d_%H-%M-%S')}.wav"
+        write(file_name, 16000, self.audio_array)

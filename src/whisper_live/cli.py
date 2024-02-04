@@ -5,11 +5,11 @@ from sys import platform
 from time import sleep
 from typing import Literal
 
-import speech_recognition as sr
 import torch
 
-from whisper_live import audio_utils, model
+from whisper_live import audio_source, audio_utils, model
 from whisper_live.logging_utils import get_log_level, logger
+from whisper_live.recorder import AudioRecorder, MonoAudioData
 from whisper_live.transcribe_utils import Sentence
 
 
@@ -119,15 +119,15 @@ def main(
     logger.info(f"🔈 Audio chunks of minimum {recording_duration}s will be sent to the model.")
     logger.info("🛑 Press Ctrl+C to stop recording!")
 
-    microphone = audio_utils.get_microphone(
+    microphone = audio_source.get_system_microphone(
         default_microphone=default_microphone, sample_rate=transcribe_model.sampling_rate
     )
-    speech_recognizer = audio_utils.get_speech_recognizer(energy_threshold=energy_threshold)
+    audio_recorder = AudioRecorder(energy_threshold=energy_threshold)
 
     with microphone:
-        speech_recognizer.adjust_for_ambient_noise(source=microphone)
+        audio_recorder.adjust_for_ambient_noise(source=microphone)
 
-    def record_callback(_, audio: sr.AudioData) -> None:
+    def record_callback(audio: MonoAudioData) -> None:
         """
         Threaded callback function to receive audio data when recordings finish.
 
@@ -141,7 +141,7 @@ def main(
 
     # Create a background thread that will pass us raw audio bytes.
     # We could do this manually but SpeechRecognizer provides a nice helper.
-    speech_recognizer.listen_in_background(
+    audio_recorder.listen_in_background(
         source=microphone,
         callback=record_callback,
         # Maximum number of seconds that this will allow a phrase to continue before stopping and
@@ -174,6 +174,7 @@ def main(
                     sentence = Sentence(
                         start_time=current_audio_chunk.start_time, end_time=current_audio_chunk.end_time, text=text
                     )
+                    # current_audio_chunk.save()
                     current_audio_chunk = audio_utils.AudioChunk(
                         audio_array=audio_np_array, start_time=datetime.now(tz=UTC)
                     )

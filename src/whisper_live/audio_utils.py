@@ -1,39 +1,9 @@
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from queue import Queue
 
 import numpy as np
-import speech_recognition as sr
-
-
-def get_microphone(default_microphone: str | None = "pulse", sample_rate: int = 16000) -> sr.Microphone:
-    """Get the specified system microphone if available."""
-    # Important for linux users.
-    # Prevents permanent application hang and crash by using the wrong Microphone
-    if "linux" in sys.platform:
-        mic_name = default_microphone
-        if not mic_name or mic_name == "list":
-            mic_names = "\n".join(f"- {n}" for n in sr.Microphone.list_microphone_names())
-            err_msg = f"No microphone selected. Available microphone devices are:\n{mic_names}"
-            raise ValueError(err_msg)
-        else:
-            for index, name in enumerate(sr.Microphone.list_microphone_names()):
-                if mic_name in name:
-                    return sr.Microphone(sample_rate=sample_rate, device_index=index)
-    return sr.Microphone(sample_rate=sample_rate)
-
-
-def get_speech_recognizer(energy_threshold: int = 300) -> sr.Recognizer:
-    """Set up a speech recognizer with a custom energy threshold."""
-    # We use SpeechRecognizer to record our audio because it has a nice feature where
-    # it can detect when speech ends.
-    speech_recognizer = sr.Recognizer()
-    speech_recognizer.energy_threshold = energy_threshold
-    # Definitely do this, dynamic energy compensation lowers the energy threshold dramatically
-    # to a point where the SpeechRecognizer never stops recording.
-    speech_recognizer.dynamic_energy_threshold = False
-    return speech_recognizer
+from scipy.io.wavfile import write
 
 
 def to_audio_array(audio_data: bytes) -> np.ndarray:
@@ -70,3 +40,9 @@ class AudioChunk:
 
     def update_array(self, new_audio: np.ndarray) -> None:
         self.audio_array = np.concatenate((self.audio_array, new_audio))
+
+    def save(self, file_name: str | None = None) -> None:
+        """Save the audio array to a file."""
+        if file_name is None:
+            file_name = f"data/audio_{self.start_time.strftime('%Y-%m-%d_%H-%M-%S')}.wav"
+        write(file_name, 16000, self.audio_array)
